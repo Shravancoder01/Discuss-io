@@ -1,18 +1,19 @@
 import { supabase } from './supabase'
 
-// Posts API
+/* ---------------------- POSTS API ---------------------- */
+
+// Fetch posts by category + sort
 export const fetchPosts = async (sortBy = 'hot', category = null) => {
   let query = supabase
     .from('app_97300927f3_posts')
     .select(`
       *,
-      app_97300927f3_post_votes!inner(vote_type)
+      app_97300927f3_post_votes(vote_type)
     `)
 
-  if (category) {
-    query = query.eq('category', category)
-  }
+  if (category) query = query.eq('category', category)
 
+  // Sorting
   switch (sortBy) {
     case 'new':
       query = query.order('created_at', { ascending: false })
@@ -22,20 +23,21 @@ export const fetchPosts = async (sortBy = 'hot', category = null) => {
       break
     case 'hot':
     default:
-      // Simple hot algorithm: combine vote score and recency
+      // Basic "hot" = votes first, then recency
       query = query.order('vote_score', { ascending: false })
       break
   }
 
   const { data, error } = await query.limit(20)
   if (error) throw error
-  
+
   return data.map(post => ({
     ...post,
     user_vote: post.app_97300927f3_post_votes?.[0]?.vote_type || null
   }))
 }
 
+// Fetch single post
 export const fetchPost = async (postId) => {
   const { data, error } = await supabase
     .from('app_97300927f3_posts')
@@ -53,18 +55,22 @@ export const fetchPost = async (postId) => {
   }
 }
 
+// Create post
 export const createPost = async (title, content, category) => {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
-  // Get or create user profile
+  // Get username
   const { data: profile } = await supabase
     .from('app_97300927f3_profiles')
     .select('username')
     .eq('id', user.id)
-    .single()
+    .maybeSingle()
 
-  const username = profile?.username || user.user_metadata?.username || user.email.split('@')[0]
+  const username =
+    profile?.username ||
+    user.user_metadata?.username ||
+    user.email.split('@')[0]
 
   const { data, error } = await supabase
     .from('app_97300927f3_posts')
@@ -82,21 +88,21 @@ export const createPost = async (title, content, category) => {
   return data
 }
 
+// Vote on post
 export const voteOnPost = async (postId, voteType) => {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
-  // Check if user already voted
   const { data: existingVote } = await supabase
     .from('app_97300927f3_post_votes')
     .select('vote_type')
     .eq('post_id', postId)
     .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
 
   if (existingVote) {
     if (existingVote.vote_type === voteType) {
-      // Remove vote if same type
+      // Remove vote
       const { error } = await supabase
         .from('app_97300927f3_post_votes')
         .delete()
@@ -104,7 +110,7 @@ export const voteOnPost = async (postId, voteType) => {
         .eq('user_id', user.id)
       if (error) throw error
     } else {
-      // Update vote type
+      // Update vote
       const { error } = await supabase
         .from('app_97300927f3_post_votes')
         .update({ vote_type: voteType })
@@ -113,7 +119,7 @@ export const voteOnPost = async (postId, voteType) => {
       if (error) throw error
     }
   } else {
-    // Create new vote
+    // Insert new vote
     const { error } = await supabase
       .from('app_97300927f3_post_votes')
       .insert({
@@ -125,7 +131,8 @@ export const voteOnPost = async (postId, voteType) => {
   }
 }
 
-// Comments API
+/* ---------------------- COMMENTS API ---------------------- */
+
 export const fetchComments = async (postId) => {
   const { data, error } = await supabase
     .from('app_97300927f3_comments')
@@ -142,26 +149,22 @@ export const fetchComments = async (postId) => {
   const commentsMap = new Map()
   const rootComments = []
 
-  // First pass: create all comment objects
   data.forEach(comment => {
-    const commentObj = {
+    const obj = {
       ...comment,
       user_vote: comment.app_97300927f3_comment_votes?.[0]?.vote_type || null,
       replies: []
     }
-    commentsMap.set(comment.id, commentObj)
+    commentsMap.set(comment.id, obj)
   })
 
-  // Second pass: build the tree
   data.forEach(comment => {
-    const commentObj = commentsMap.get(comment.id)
+    const obj = commentsMap.get(comment.id)
     if (comment.parent_id) {
       const parent = commentsMap.get(comment.parent_id)
-      if (parent) {
-        parent.replies.push(commentObj)
-      }
+      if (parent) parent.replies.push(obj)
     } else {
-      rootComments.push(commentObj)
+      rootComments.push(obj)
     }
   })
 
@@ -172,14 +175,16 @@ export const createComment = async (postId, content, parentId = null) => {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
-  // Get username
   const { data: profile } = await supabase
     .from('app_97300927f3_profiles')
     .select('username')
     .eq('id', user.id)
-    .single()
+    .maybeSingle()
 
-  const username = profile?.username || user.user_metadata?.username || user.email.split('@')[0]
+  const username =
+    profile?.username ||
+    user.user_metadata?.username ||
+    user.email.split('@')[0]
 
   const { data, error } = await supabase
     .from('app_97300927f3_comments')
@@ -201,17 +206,15 @@ export const voteOnComment = async (commentId, voteType) => {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
-  // Check if user already voted
   const { data: existingVote } = await supabase
     .from('app_97300927f3_comment_votes')
     .select('vote_type')
     .eq('comment_id', commentId)
     .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
 
   if (existingVote) {
     if (existingVote.vote_type === voteType) {
-      // Remove vote if same type
       const { error } = await supabase
         .from('app_97300927f3_comment_votes')
         .delete()
@@ -219,7 +222,6 @@ export const voteOnComment = async (commentId, voteType) => {
         .eq('user_id', user.id)
       if (error) throw error
     } else {
-      // Update vote type
       const { error } = await supabase
         .from('app_97300927f3_comment_votes')
         .update({ vote_type: voteType })
@@ -228,7 +230,6 @@ export const voteOnComment = async (commentId, voteType) => {
       if (error) throw error
     }
   } else {
-    // Create new vote
     const { error } = await supabase
       .from('app_97300927f3_comment_votes')
       .insert({
@@ -240,7 +241,8 @@ export const voteOnComment = async (commentId, voteType) => {
   }
 }
 
-// Search API
+/* ---------------------- SEARCH API ---------------------- */
+
 export const searchPosts = async (query) => {
   const { data, error } = await supabase
     .from('app_97300927f3_posts')
@@ -253,14 +255,15 @@ export const searchPosts = async (query) => {
     .limit(20)
 
   if (error) throw error
-  
+
   return data.map(post => ({
     ...post,
     user_vote: post.app_97300927f3_post_votes?.[0]?.vote_type || null
   }))
 }
 
-// User API
+/* ---------------------- USER API ---------------------- */
+
 export const fetchUserProfile = async (username) => {
   const { data, error } = await supabase
     .from('app_97300927f3_profiles')
@@ -283,7 +286,7 @@ export const fetchUserPosts = async (username) => {
     .order('created_at', { ascending: false })
 
   if (error) throw error
-  
+
   return data.map(post => ({
     ...post,
     user_vote: post.app_97300927f3_post_votes?.[0]?.vote_type || null

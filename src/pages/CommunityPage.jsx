@@ -1,87 +1,74 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useAuth } from '../contexts/AuthContext'
+import { supabase } from '../lib/supabase'
 import PostCard from '../components/PostCard'
 import { fetchPosts, voteOnPost } from '../lib/api'
-import { useAuth } from '../contexts/AuthContext'
 import { UserGroupIcon, PlusIcon } from '@heroicons/react/24/outline'
 
-const communityInfo = {
-  technology: {
-    name: 'Technology',
-    description: 'Discussions about the latest in tech, programming, and innovation.',
-    members: '125K',
-    color: 'bg-blue-500',
-    rules: ['Be respectful', 'No spam or self-promotion', 'Stay on topic', 'Use proper flair']
-  },
-  gaming: {
-    name: 'Gaming',
-    description: 'All things gaming - from indie games to AAA titles.',
-    members: '89K',
-    color: 'bg-purple-500',
-    rules: ['No toxicity', 'Mark spoilers', 'No piracy discussion', 'Original content preferred']
-  },
-  science: {
-    name: 'Science',
-    description: 'Share and discuss scientific discoveries and research.',
-    members: '67K',
-    color: 'bg-green-500',
-    rules: ['Cite sources', 'No pseudoscience', 'Peer-reviewed preferred', 'Explain like I\'m 5 welcome']
-  },
-  sports: {
-    name: 'Sports',
-    description: 'Sports news, highlights, and discussions.',
-    members: '78K',
-    color: 'bg-red-500',
-    rules: ['No personal attacks', 'Keep it civil', 'No betting promotion', 'All sports welcome']
-  },
-  music: {
-    name: 'Music',
-    description: 'Share your favorite tracks, discuss artists, and discover new music.',
-    members: '92K',
-    color: 'bg-pink-500',
-    rules: ['Support artists', 'No illegal downloads', 'Share discoveries', 'All genres welcome']
-  },
-  movies: {
-    name: 'Movies',
-    description: 'Movie reviews, discussions, and recommendations.',
-    members: '103K',
-    color: 'bg-yellow-500',
-    rules: ['Mark spoilers', 'Be constructive', 'No cam recordings', 'Include ratings']
-  },
-  books: {
-    name: 'Books',
-    description: 'Book recommendations, reviews, and literary discussions.',
-    members: '45K',
-    color: 'bg-indigo-500',
-    rules: ['No spoilers in titles', 'Mark spoilers', 'Include genre', 'Support authors']
-  },
-  food: {
-    name: 'Food',
-    description: 'Recipes, restaurant reviews, and culinary adventures.',
-    members: '134K',
-    color: 'bg-orange-500',
-    rules: ['Share recipes', 'No food shaming', 'Include ingredients', 'Safety first']
-  }
-}
-
 export default function CommunityPage() {
-  const { category } = useParams()
+  const { category: communityName } = useParams()
   const { user } = useAuth()
   const [sortBy, setSortBy] = useState('hot')
+  const [community, setCommunity] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [hasAccess, setHasAccess] = useState(false)
   const [joined, setJoined] = useState(false)
 
-  const community = communityInfo[category] || {
-    name: category,
-    description: `Community for ${category} discussions.`,
-    members: '0',
-    color: 'bg-gray-500',
-    rules: ['Be respectful', 'Stay on topic', 'Follow community guidelines']
-  }
+  // Fetch community info from Supabase
+  useEffect(() => {
+    const fetchCommunity = async () => {
+      setLoading(true)
+      const { data, error } = await supabase
+        .from('communities')
+        .select('*')
+        .eq('name', communityName)
+        .single()
 
+      if (error) {
+        console.error(error)
+        setCommunity(null)
+        setLoading(false)
+        return
+      }
+
+      // For private communities, check user membership if logged in
+      if (!data.is_public) {
+        if (!user) {
+          // No user - no access
+          setHasAccess(false)
+        } else {
+          // Check community_members table for approved membership
+          const { data: memberData, error: memberError } = await supabase
+            .from('community_members')
+            .select('approved')
+            .eq('community_id', data.id)
+            .eq('user_id', user.id)
+            .single()
+
+          if (memberError || !memberData || !memberData.approved) {
+            setHasAccess(false)
+          } else {
+            setHasAccess(true)
+          }
+        }
+      } else {
+        // Public community - everyone has access
+        setHasAccess(true)
+      }
+
+      setCommunity(data)
+      setLoading(false)
+    }
+
+    fetchCommunity()
+  }, [communityName, user])
+
+  // Fetch posts only if user has access
   const { data: posts, isLoading, refetch } = useQuery({
-    queryKey: ['posts', sortBy, category],
-    queryFn: () => fetchPosts(sortBy, category)
+    queryKey: ['posts', sortBy, communityName],
+    queryFn: () => fetchPosts(sortBy, communityName),
+    enabled: hasAccess && !!communityName
   })
 
   const handleVote = async (postId, voteType) => {
@@ -94,11 +81,29 @@ export default function CommunityPage() {
     }
   }
 
-  const handleJoin = () => {
-    setJoined(!joined)
+  const handleJoin = async () => {
+    if (!user || !community) return
+
+    // Insert membership request with approved = false initially
+    const { error } = await supabase
+      .from('community_members')
+      .upsert([
+        {
+          community_id: community.id,
+          user_id: user.id,
+          approved: false
+        }
+      ])
+
+    if (error) {
+      console.error('Error joining community:', error)
+    } else {
+      // You might want to notify user that request is pending approval
+      setJoined(true)
+    }
   }
 
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="max-w-4xl mx-auto py-6">
         <div className="animate-pulse space-y-4">
@@ -111,24 +116,63 @@ export default function CommunityPage() {
     )
   }
 
+  if (!community) {
+    return <div className="max-w-4xl mx-auto py-6 text-white">Community not found</div>
+  }
+
+  if (!hasAccess) {
+    return (
+      <div className="max-w-4xl mx-auto py-6 text-center text-white">
+        <h2>This community is private</h2>
+        <p>You must be an approved member to view the content.</p>
+        {user ? (
+          <>
+            <button
+              onClick={handleJoin}
+              disabled={joined}
+              className={`mt-4 px-4 py-2 rounded-lg font-medium transition-colors ${
+                joined ? 'bg-gray-600 cursor-not-allowed' : 'bg-orange-500 hover:bg-orange-600'
+              }`}
+            >
+              {joined ? 'Join Request Sent' : 'Request to Join'}
+            </button>
+          </>
+        ) : (
+          <p>
+            Please <Link to="/login" className="text-orange-500 underline">log in</Link> to request access.
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  // For community info, you may want to replace hardcoded communityInfo with your DB data or fallback stuff
+  const communityInfo = {
+    name: community.name,
+    description: community.description || `Community for ${community.name} discussions.`,
+    members: 'N/A', // You can query member count on demand if needed
+    color: 'bg-gray-700', // Adjust color as needed or store in DB
+    rules: ['Be respectful', 'Stay on topic', 'Follow community guidelines'] // You could fetch rules from DB or keep static
+  }
+
   return (
     <div className="max-w-4xl mx-auto py-6">
       {/* Community Header */}
       <div className="bg-gray-800 rounded-lg p-6 mb-6">
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center space-x-4">
-            <div className={`w-16 h-16 ${community.color} rounded-full flex items-center justify-center`}>
+            <div className={`w-16 h-16 ${communityInfo.color} rounded-full flex items-center justify-center`}>
               <span className="text-white font-bold text-xl">
-                {community.name.charAt(0).toUpperCase()}
+                {communityInfo.name.charAt(0).toUpperCase()}
               </span>
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-white">d/{category}</h1>
-              <p className="text-gray-400 mt-1">{community.description}</p>
+              <h1 className="text-2xl font-bold text-white">d/{communityName}</h1>
+              <p className="text-gray-400 mt-1">{communityInfo.description}</p>
               <div className="flex items-center space-x-4 mt-2 text-sm text-gray-300">
                 <span className="flex items-center">
                   <UserGroupIcon className="h-4 w-4 mr-1" />
-                  {community.members} members
+                  {communityInfo.members} members
                 </span>
               </div>
             </div>
@@ -138,9 +182,10 @@ export default function CommunityPage() {
               <>
                 <button
                   onClick={handleJoin}
+                  disabled={joined}
                   className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                     joined
-                      ? 'bg-gray-600 hover:bg-gray-700 text-white'
+                      ? 'bg-gray-600 hover:bg-gray-700 text-white cursor-not-allowed'
                       : 'bg-orange-500 hover:bg-orange-600 text-white'
                   }`}
                 >
@@ -183,7 +228,9 @@ export default function CommunityPage() {
 
           {/* Posts Feed */}
           <div className="space-y-4">
-            {posts && posts.length > 0 ? (
+            {isLoading ? (
+              <div>Loading posts...</div>
+            ) : posts && posts.length > 0 ? (
               posts.map((post) => (
                 <PostCard key={post.id} post={post} onVote={handleVote} />
               ))
@@ -191,7 +238,7 @@ export default function CommunityPage() {
               <div className="bg-gray-800 rounded-lg p-8 text-center">
                 <h3 className="text-white font-medium mb-2">No posts yet</h3>
                 <p className="text-gray-400 mb-4">
-                  Be the first to post in d/{category}!
+                  Be the first to post in d/{communityName}!
                 </p>
                 {user && (
                   <Link
@@ -212,7 +259,7 @@ export default function CommunityPage() {
           <div className="bg-gray-800 rounded-lg p-6">
             <h3 className="text-white font-semibold mb-4">Community Rules</h3>
             <ol className="space-y-2">
-              {community.rules.map((rule, index) => (
+              {communityInfo.rules.map((rule, index) => (
                 <li key={index} className="text-gray-300 text-sm">
                   <span className="text-orange-500 font-medium">{index + 1}.</span> {rule}
                 </li>
@@ -223,16 +270,13 @@ export default function CommunityPage() {
           {/* About */}
           <div className="bg-gray-800 rounded-lg p-6">
             <h3 className="text-white font-semibold mb-4">About Community</h3>
-            <p className="text-gray-300 text-sm mb-4">{community.description}</p>
+            <p className="text-gray-300 text-sm mb-4">{communityInfo.description}</p>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-400">Members</span>
-                <span className="text-white">{community.members}</span>
+                <span className="text-white">{communityInfo.members}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">Created</span>
-                <span className="text-white">Jan 2024</span>
-              </div>
+              {/* Add more about info here if desired */}
             </div>
           </div>
 
@@ -240,6 +284,7 @@ export default function CommunityPage() {
           <div className="bg-gray-800 rounded-lg p-6">
             <h3 className="text-white font-semibold mb-4">Moderators</h3>
             <div className="space-y-3">
+              {/* You can fetch and render moderators from DB */}
               <div className="flex items-center space-x-3">
                 <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
                   <span className="text-white text-xs font-bold">M</span>

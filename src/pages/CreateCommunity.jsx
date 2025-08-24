@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { supabase } from '../lib/supabase'
 
 export default function CreateCommunity() {
   const [name, setName] = useState('')
@@ -21,8 +22,24 @@ export default function CreateCommunity() {
 
     setLoading(true)
     try {
-      // In a real app, you would create the community in the database
-      console.log('Creating community:', { name, description, isPublic })
+      const { error } = await supabase
+        .from('communities')
+        .insert([
+          {
+            name: name.toLowerCase(),
+            description,
+            is_public: isPublic,
+            owner_id: user.id,
+          }
+        ])
+
+      if (error) {
+        console.error('Error creating community:', error)
+        // Optionally show a user-friendly notification here
+        setLoading(false)
+        return
+      }
+
       navigate(`/category/${name.toLowerCase()}`)
     } finally {
       setLoading(false)

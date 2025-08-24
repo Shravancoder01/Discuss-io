@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
-import { 
-  ChevronUpIcon, 
-  ChevronDownIcon, 
+import {
+  ChevronUpIcon,
+  ChevronDownIcon,
   ChatBubbleLeftIcon,
   ChevronRightIcon,
-  ChevronDownIcon as ChevronDownIconCollapse
+  ChevronDownIcon as ChevronDownIconCollapse,
 } from '@heroicons/react/24/outline'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -20,7 +20,6 @@ export default function CommentThread({ comment, onVote, onReply, depth = 0 }) {
 
   const handleVote = async (voteType) => {
     if (!user || isVoting) return
-    
     setIsVoting(true)
     try {
       await onVote(comment.id, voteType)
@@ -32,7 +31,6 @@ export default function CommentThread({ comment, onVote, onReply, depth = 0 }) {
   const handleReply = async (e) => {
     e.preventDefault()
     if (!user || !replyContent.trim() || isReplying) return
-
     setIsReplying(true)
     try {
       await onReply(comment.id, replyContent.trim())
@@ -51,19 +49,19 @@ export default function CommentThread({ comment, onVote, onReply, depth = 0 }) {
     return 'text-gray-400'
   }
 
-  const indentLevel = Math.min(depth, 8) // Max 8 levels of nesting
+  const indentLevel = Math.min(depth, 8)
 
   return (
     <div className={`${depth > 0 ? 'ml-4 border-l-2 border-gray-700 pl-4' : ''}`}>
       <div className="bg-gray-800 rounded-lg p-3 mb-2">
-        {/* Comment Header */}
+        {/* Header */}
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center space-x-2 text-xs text-gray-400">
             <Link
-              to={`/user/${comment.author}`}
+              to={`/user/${comment.author_username}`}
               className="font-medium hover:text-white transition-colors"
             >
-              u/{comment.author}
+              u/{comment.author_username}
             </Link>
             <span>•</span>
             <span>{formatDistanceToNow(new Date(comment.created_at))} ago</span>
@@ -82,14 +80,9 @@ export default function CommentThread({ comment, onVote, onReply, depth = 0 }) {
 
         {!isCollapsed && (
           <>
-            {/* Comment Content */}
-            <div className="text-gray-300 text-sm mb-3 whitespace-pre-wrap">
-              {comment.content}
-            </div>
+            <div className="text-gray-300 text-sm mb-3 whitespace-pre-wrap">{comment.content}</div>
 
-            {/* Comment Actions */}
             <div className="flex items-center space-x-4">
-              {/* Vote Buttons */}
               <div className="flex items-center space-x-1">
                 <button
                   onClick={() => handleVote('up')}
@@ -100,9 +93,7 @@ export default function CommentThread({ comment, onVote, onReply, depth = 0 }) {
                 >
                   <ChevronUpIcon className="h-4 w-4" />
                 </button>
-                <span className="text-xs font-bold text-gray-300">
-                  {comment.vote_score || 0}
-                </span>
+                <span className="text-xs font-bold text-gray-300">{comment.vote_score || 0}</span>
                 <button
                   onClick={() => handleVote('down')}
                   disabled={!user || isVoting}
@@ -113,8 +104,6 @@ export default function CommentThread({ comment, onVote, onReply, depth = 0 }) {
                   <ChevronDownIcon className="h-4 w-4" />
                 </button>
               </div>
-
-              {/* Reply Button */}
               {user && (
                 <button
                   onClick={() => setShowReplyForm(!showReplyForm)}
@@ -126,7 +115,6 @@ export default function CommentThread({ comment, onVote, onReply, depth = 0 }) {
               )}
             </div>
 
-            {/* Reply Form */}
             {showReplyForm && (
               <form onSubmit={handleReply} className="mt-3">
                 <textarea
@@ -162,7 +150,6 @@ export default function CommentThread({ comment, onVote, onReply, depth = 0 }) {
         )}
       </div>
 
-      {/* Nested Replies */}
       {!isCollapsed && comment.replies && comment.replies.length > 0 && (
         <div className="space-y-2">
           {comment.replies.map((reply) => (
