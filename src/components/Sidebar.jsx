@@ -1,7 +1,9 @@
 import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { HomeIcon, FireIcon, ClockIcon, ChartBarIcon } from '@heroicons/react/24/outline'
+import { useCommunities } from '../hooks/useCommunities'
 
+// Static categories list
 const categories = [
   { name: 'Technology', slug: 'technology', color: 'bg-blue-500' },
   { name: 'Gaming', slug: 'gaming', color: 'bg-purple-500' },
@@ -14,6 +16,8 @@ const categories = [
 ]
 
 export default function Sidebar({ open, onClose }) {
+  const { communities, loading } = useCommunities()
+
   // Close sidebar on Esc key
   useEffect(() => {
     if (!open) return;
@@ -72,8 +76,7 @@ export default function Sidebar({ open, onClose }) {
             <span>Trending</span>
           </Link>
         </div>
-
-        {/* Categories */}
+        {/* Categories (Static) */}
         <div>
           <h3 className="text-gray-400 text-sm font-semibold mb-3 uppercase tracking-wider">
             Categories
@@ -91,7 +94,31 @@ export default function Sidebar({ open, onClose }) {
             ))}
           </div>
         </div>
-
+        {/* Communities (Dynamic, from Supabase) */}
+        <div>
+          <h3 className="text-gray-400 text-sm font-semibold mb-3 uppercase tracking-wider">
+            New Communities
+          </h3>
+          <div className="space-y-1 max-h-40 overflow-y-auto">
+            {loading ? (
+              <div className="text-gray-400 px-2">Loading communities...</div>
+            ) : (
+              communities.map((community) => (
+                // Avoid duplicate display if category already exists
+                !categories.find(cat => cat.slug.toLowerCase() === community.name.toLowerCase()) && (
+                  <Link
+                    key={community.id}
+                    to={`/category/${community.name.toLowerCase()}`}
+                    className="flex items-center space-x-3 text-gray-300 hover:text-white hover:bg-gray-800 p-2 rounded-lg transition-colors"
+                  >
+                    <div className="w-4 h-4 rounded-full bg-gray-600" />
+                    <span>{community.name}</span>
+                  </Link>
+                )
+              ))
+            )}
+          </div>
+        </div>
         {/* Create Community */}
         <div className="pt-4 border-t border-gray-700">
           <Link

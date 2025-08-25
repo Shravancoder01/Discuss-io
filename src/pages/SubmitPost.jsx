@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
-  // Adjust path if needed!
+import { useCommunities } from '../hooks/useCommunities'
 
-
+// Static categories (permanent!)
 const categories = [
   'technology',
   'gaming',
@@ -19,46 +19,55 @@ const categories = [
 ]
 
 export default function SubmitPost() {
+  const { communities, loading } = useCommunities()
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
-  const [category, setCategory] = useState('technology')
-  const [loading, setLoading] = useState(false)
+  const [category, setCategory] = useState(categories[0])
+  const [loadingPost, setLoadingPost] = useState(false)
   const { user } = useAuth()
   const navigate = useNavigate()
+
+  // Merge static and dynamic, filter out duplicates based on lowercased name
+  const dynamicCommunities = communities.filter(
+    comm => !categories.includes(comm.name.toLowerCase())
+  )
+  const allCommunities = [...categories, ...dynamicCommunities.map(comm => comm.name.toLowerCase())]
 
   if (!user) {
     navigate('/login')
     return null
   }
 
+  if (loading) return <div>Loading communities...</div>
+
   const handleSubmit = async (e) => {
-  e.preventDefault();
-  if (!title.trim()) return;
+    e.preventDefault()
+    if (!title.trim()) return
 
-  setLoading(true);
-  try {
-    const { error } = await supabase
-      .from('app_97300927f3_posts')
-      .insert([
-        {
-          title,
-          content, // can be empty
-          author_id: user.id,
-          author_username: user.user_metadata?.username || user.email,
-          category,
-        }
-      ]);
+    setLoadingPost(true)
+    try {
+      const { error } = await supabase
+        .from('app_97300927f3_posts')
+        .insert([
+          {
+            title,
+            content,
+            author_id: user.id,
+            author_username: user.user_metadata?.username || user.email,
+            category,
+          }
+        ])
 
-    if (error) {
-      alert('Error creating post: ' + error.message);
-      setLoading(false);
-      return;
+      if (error) {
+        alert('Error creating post: ' + error.message)
+        setLoadingPost(false)
+        return
+      }
+      navigate('/')
+    } finally {
+      setLoadingPost(false)
     }
-    navigate('/');
-  } finally {
-    setLoading(false);
   }
-};
 
   return (
     <div className="max-w-4xl mx-auto py-6">
@@ -66,7 +75,7 @@ export default function SubmitPost() {
         <h1 className="text-2xl font-bold text-white mb-6">Create a post</h1>
         
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Category Selection */}
+          {/* Community Selection */}
           <div>
             <label htmlFor="category" className="block text-sm font-medium text-gray-300 mb-2">
               Choose a community
@@ -74,17 +83,18 @@ export default function SubmitPost() {
             <select
               id="category"
               value={category}
-              onChange={(e) => setCategory(e.target.value)}
+              onChange={e => setCategory(e.target.value)}
               className="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              required
             >
-              {categories.map((cat) => (
+              {allCommunities.map((cat) => (
                 <option key={cat} value={cat}>
                   d/{cat}
                 </option>
               ))}
             </select>
           </div>
-
+          
           {/* Title */}
           <div>
             <label htmlFor="title" className="block text-sm font-medium text-gray-300 mb-2">
@@ -94,7 +104,7 @@ export default function SubmitPost() {
               type="text"
               id="title"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={e => setTitle(e.target.value)}
               placeholder="An interesting title"
               className="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
               required
@@ -104,7 +114,7 @@ export default function SubmitPost() {
               {title.length}/300
             </div>
           </div>
-
+          
           {/* Content */}
           <div>
             <label htmlFor="content" className="block text-sm font-medium text-gray-300 mb-2">
@@ -113,13 +123,13 @@ export default function SubmitPost() {
             <textarea
               id="content"
               value={content}
-              onChange={(e) => setContent(e.target.value)}
+              onChange={e => setContent(e.target.value)}
               placeholder="Text (optional)"
               className="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none"
               rows={8}
             />
           </div>
-
+          
           {/* Submit Buttons */}
           <div className="flex justify-end space-x-3 pt-4 border-t border-gray-700">
             <button
@@ -131,10 +141,10 @@ export default function SubmitPost() {
             </button>
             <button
               type="submit"
-              disabled={!title.trim() || loading}
+              disabled={!title.trim() || loadingPost}
               className="px-6 py-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
             >
-              {loading ? 'Posting...' : 'Post'}
+              {loadingPost ? 'Posting...' : 'Post'}
             </button>
           </div>
         </form>
